@@ -72,6 +72,26 @@ namespace XlsxToConfig
             [System.Runtime.InteropServices.DllImport("kernel32")]
             private static extern long GetPrivateProfileString(string section, string key, string def, StringBuilder retVal, int size, string filePath);
 
+            private static char[] s_ArrSeparator = new char[] { '|' };
+
+            class Scope
+            {
+                public readonly string Begin, End, Separator;
+                public Scope(string b, string e, string s)
+                {
+                    Begin = b; End = e; Separator = s;
+                }
+
+                public Scope(string value)
+                {
+                    value = value.Replace("\\n", "\n").Replace("\\t", "\t");
+                    var values = value.Split(s_ArrSeparator);
+                    if (values.Length > 0) Begin = values[0];
+                    if (values.Length > 1) Separator = values[1];
+                    if (values.Length > 2) End = values[2];
+                }
+            }
+
             private string m_ReadPath;
             private string m_SavePath;
             private string m_FileExt = "lua";
@@ -79,19 +99,15 @@ namespace XlsxToConfig
             private int m_PlatRowNum = 0;
             private int m_TypeRowNum = 1;
             private int m_HeaderRowNum = 2;
-            private char[] m_ArrSeparator = new char[] { '|' };
 
-            private string m_TableBegin = "{";
-            private string m_TableEnd = "}";
-            private string m_LineBegin = "{";
-            private string m_LineEnd = "},";
-            private string m_CellFmt = "{0}={1},";
+            private Scope m_Table = new Scope("{\n", "\n}", null);
+            private Scope m_Line = new Scope("{", "}", ",");
+            private Scope m_Array = new Scope("{", "}", ",");
+            private Scope m_Cell = new Scope("{0}={1}", null, ",");
+
             private string m_StrQoute = "\"";
             private string m_BoolTRUE = "true";
             private string m_BoolFALSE = "false";
-            private string m_ArrBegin = "{";
-            private string m_ArrElm = "{0},";
-            private string m_ArrEnd = "}";
             private string m_NullValue = "nil";
 
             public string readPath { get { return m_ReadPath; } }
@@ -117,6 +133,15 @@ namespace XlsxToConfig
                 return def;
             }
 
+            private static Scope ReadIniScope(string section, string key, StringBuilder temp, string iniPath)
+            {                
+                var tableValue = ReadIniString(section, key, temp, iniPath);
+                if (!string.IsNullOrEmpty(tableValue)) {
+                    return new Scope(tableValue);
+                }
+                return null;
+            }
+
             public XlsxConvertor(string iniPath, string section)
             {
                 var temp = new StringBuilder(1024);
@@ -126,93 +151,98 @@ namespace XlsxToConfig
                 m_PlatRowNum = ReadIniInteger(section, "PlatRow", -1, temp, iniPath);
                 m_TypeRowNum = ReadIniInteger(section, "TypeRow", -1, temp, iniPath);
                 m_HeaderRowNum = ReadIniInteger(section, "HeaderRow", -1, temp, iniPath);
-                m_TableBegin = ReadIniString(section, "TableBegin", temp, iniPath);
-                m_TableEnd = ReadIniString(section, "TableEnd", temp, iniPath);
-                m_LineBegin = ReadIniString(section, "LineBegin", temp, iniPath);
-                m_LineEnd = ReadIniString(section, "LineEnd", temp, iniPath);
-                m_CellFmt = ReadIniString(section, "CellFmt", temp, iniPath);
+
+                m_Table = ReadIniScope(section, "Table", temp, iniPath) ?? m_Table;
+                m_Line = ReadIniScope(section, "Line", temp, iniPath) ?? m_Line;
+                m_Array = ReadIniScope(section, "Array", temp, iniPath) ?? m_Array;
+                m_Cell = ReadIniScope(section, "Cell", temp, iniPath) ?? m_Cell;
+
                 m_StrQoute = ReadIniString(section, "StrQoute", temp, iniPath);
-                m_ArrBegin = ReadIniString(section, "ArrBegin", temp, iniPath);
-                m_ArrElm = ReadIniString(section, "ArrElm", temp, iniPath);
-                m_ArrEnd = ReadIniString(section, "ArrEnd", temp, iniPath);
                 m_BoolTRUE = ReadIniString(section, "BoolTRUE", temp, iniPath);
                 m_BoolFALSE = ReadIniString(section, "BoolFALSE", temp, iniPath);
                 m_NullValue = ReadIniString(section, "NullValue", temp, iniPath);
             }
             
-            private void BuildCell(StringBuilder strbld, string key, ICell cell, string cellType)
+            private void BuildCell(StringBuilder strbld, bool firstCell, string key, ICell cell, string cellType)
             {
                 if (cell == null) return;
-
+                
+                if (!firstCell) strbld.Append(m_Cell.Separator);
+                var cellFmt = m_Cell.Begin;
                 switch (cellType) {
                     case "bool":
                         switch (cell.CellType) {
                             case CellType.Boolean:
-                                strbld.AppendFormat(m_CellFmt, key, cell.BooleanCellValue ? m_BoolTRUE : m_BoolFALSE);
+                                strbld.AppendFormat(cellFmt, key, cell.BooleanCellValue ? m_BoolTRUE : m_BoolFALSE);
                                 break;
                             case CellType.Numeric:
-                                strbld.AppendFormat(m_CellFmt, key, cell.NumericCellValue != 0 ? m_BoolTRUE : m_BoolFALSE);
+                                strbld.AppendFormat(cellFmt, key, cell.NumericCellValue != 0 ? m_BoolTRUE : m_BoolFALSE);
                                 break;
                             default:
-                                strbld.AppendFormat(m_CellFmt, key, !string.IsNullOrEmpty(cell.ToString()) ? m_BoolTRUE : m_BoolFALSE);
+                                strbld.AppendFormat(cellFmt, key, !string.IsNullOrEmpty(cell.ToString()) ? m_BoolTRUE : m_BoolFALSE);
                                 break;
                         }
                         break;
                     case "int":
                         switch (cell.CellType) {
                             case CellType.Boolean:
-                                strbld.AppendFormat(m_CellFmt, key, cell.BooleanCellValue ? 1 : 0);
+                                strbld.AppendFormat(cellFmt, key, cell.BooleanCellValue ? 1 : 0);
                                 break;
                             case CellType.Numeric:
-                                strbld.AppendFormat(m_CellFmt, key, cell);
+                                strbld.AppendFormat(cellFmt, key, cell);
                                 break;
                             default:
                                 var strValue = cell.ToString();
                                 int value = 0;
                                 if (int.TryParse(strValue, out value)) {
-                                    strbld.AppendFormat(m_CellFmt, key, value);
+                                    strbld.AppendFormat(cellFmt, key, value);
                                 }
                                 break;
                         }
                         break;
                     case "string":
                         if (!string.IsNullOrEmpty(m_StrQoute)) {
-                            strbld.AppendFormat(m_CellFmt, key, m_StrQoute + cell.ToString() + m_StrQoute);
+                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cell.ToString() + m_StrQoute);
                         } else {
-                            strbld.AppendFormat(m_CellFmt, key, cell);
+                            strbld.AppendFormat(cellFmt, key, cell);
                         }
                         break;
                     case "int[]": {
-                            var arrbld = new StringBuilder(m_ArrBegin);
-                            foreach (var elm in cell.ToString().Split(m_ArrSeparator)) {
-                                var value = 0;
-                                if (int.TryParse(elm, out value)) {
-                                    arrbld.AppendFormat(m_ArrElm, value);
+                            var arrbld = new StringBuilder(m_Array.Begin);
+                            var array = cell.ToString().Split(s_ArrSeparator);
+                            for(var i = 0; i < array.Length; ++i) {
+                                var elm = array[i];
+                                if (i > 0) arrbld.Append(m_Array.Separator);
+                                if (int.TryParse(elm, out int value)) {
+                                    arrbld.Append(value);
                                 } else {
-                                    arrbld.AppendFormat(m_ArrElm, m_NullValue);
+                                    arrbld.Append(m_NullValue);
                                 }
                             }
-                            arrbld.Append(m_ArrEnd);
-                            strbld.AppendFormat(m_CellFmt, key, arrbld.ToString());
+                            arrbld.Append(m_Array.End);
+                            strbld.AppendFormat(cellFmt, key, arrbld.ToString());
                         }
                         break;
                     case "string[]": {
-                            var arrbld = new StringBuilder(m_ArrBegin);
-                            foreach (var elm in cell.ToString().Split(m_ArrSeparator)) {
-                                arrbld.AppendFormat(m_ArrElm, string.IsNullOrEmpty(elm) ? m_NullValue : m_StrQoute + elm + m_StrQoute);
+                            var arrbld = new StringBuilder(m_Array.Begin);
+                            var array = cell.ToString().Split(s_ArrSeparator);
+                            for (var i = 0; i < array.Length; ++i) {
+                                var elm = array[i];
+                                if (i > 0) arrbld.Append(m_Array.Separator);
+                                arrbld.Append(string.IsNullOrEmpty(elm) ? m_NullValue : m_StrQoute + elm + m_StrQoute);
                             }
-                            arrbld.Append(m_ArrEnd);
-                            strbld.AppendFormat(m_CellFmt, key, arrbld.ToString());
+                            arrbld.Append(m_Array.End);
+                            strbld.AppendFormat(cellFmt, key, arrbld.ToString());
                         }
                         break;
-                    default: break;
+                    default: strbld.Append(cellType); break;
                 }
             }
 
             public string BuildTable(ISheet sheet)
             {
                 var strbld = new StringBuilder();
-                strbld.Append(m_TableBegin);
+                strbld.Append(m_Table.Begin);
                 var platforms = sheet.GetRow(m_PlatRowNum);
                 var types = sheet.GetRow(m_TypeRowNum);
                 var header = sheet.GetRow(m_HeaderRowNum);
@@ -222,9 +252,11 @@ namespace XlsxToConfig
                 var firstCellNum = header.FirstCellNum;
                 var lastCellNum = header.LastCellNum;
 
-                for (var i = sheet.FirstRowNum + m_HeaderRowNum + 1; i <= sheet.LastRowNum; ++i) {
+                var last = sheet.LastRowNum;
+                for (var i = sheet.FirstRowNum + m_HeaderRowNum + 1; i <= last; ++i) {
                     var row = sheet.GetRow(i);
-                    strbld.Append(m_LineBegin);
+                    strbld.Append(m_Line.Begin);                    
+                    var first = true;
                     for (var j = firstCellNum; j < lastCellNum; ++j) {
                         var plat = platforms.GetCell(j);
                         if (plat == null || string.IsNullOrEmpty(plat.StringCellValue)) continue;
@@ -235,11 +267,13 @@ namespace XlsxToConfig
                         var cell = header.GetCell(j);
                         if (cell == null) continue;
 
-                        BuildCell(strbld, cell.StringCellValue, row.GetCell(j), type.StringCellValue);
+                        BuildCell(strbld, first, cell.StringCellValue, row.GetCell(j), type.StringCellValue);
+                        first = false;
                     }
-                    strbld.AppendLine(m_LineEnd);
+                    strbld.Append(m_Line.End);
+                    if (i < last) strbld.AppendLine(m_Line.Separator);
                 }
-                strbld.Append(m_TableEnd);
+                strbld.Append(m_Table.End);
                 return strbld.ToString();
             }
         }
