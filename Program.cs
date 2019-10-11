@@ -193,10 +193,8 @@ namespace XlsxToConfig
                                 break;
                             default:
                                 var strValue = cell.ToString();
-                                int value = 0;
-                                if (int.TryParse(strValue, out value)) {
-                                    strbld.AppendFormat(cellFmt, key, value);
-                                }
+                                int.TryParse(strValue, out int value);
+                                strbld.AppendFormat(cellFmt, key, value);
                                 break;
                         }
                         break;
@@ -216,6 +214,7 @@ namespace XlsxToConfig
                                 if (int.TryParse(elm, out int value)) {
                                     arrbld.Append(value);
                                 } else {
+                                    if (array.Length == 1) break;
                                     arrbld.Append(m_NullValue);
                                 }
                             }
@@ -229,7 +228,12 @@ namespace XlsxToConfig
                             for (var i = 0; i < array.Length; ++i) {
                                 var elm = array[i];
                                 if (i > 0) arrbld.Append(m_Array.Separator);
-                                arrbld.Append(string.IsNullOrEmpty(elm) ? m_NullValue : m_StrQoute + elm + m_StrQoute);
+                                if (string.IsNullOrEmpty(elm)) {
+                                    if (array.Length == 1) break;
+                                    arrbld.Append(m_NullValue);
+                                } else {
+                                    arrbld.Append(m_StrQoute + elm + m_StrQoute);
+                                }
                             }
                             arrbld.Append(m_Array.End);
                             strbld.AppendFormat(cellFmt, key, arrbld.ToString());
