@@ -43,6 +43,7 @@ namespace XlsxToConfig
                     } else if (Directory.Exists(xlsxPath)) {
                         xlsxPath = Path.GetFullPath(xlsxPath);
                         foreach (var path in Directory.GetFiles(xlsxPath, "*", SearchOption.AllDirectories)) {
+                            if (path.EndsWith(convertor.locFileName)) continue;
                             ConvertXlsx(convertor, Path.GetFullPath(path), xlsxPath, savePath);
                         }
                     } else {
@@ -59,6 +60,17 @@ namespace XlsxToConfig
 
         private class XlsxConvertor
         {
+            class LocDefine
+            {
+                public string sheet, key, header;
+            }
+
+            private Dictionary<string, string> m_LocalizationTextMap = new Dictionary<string, string>();
+            private List<LocDefine> m_LocalizationDefineList = new List<LocDefine>();
+
+            private string m_CurrentSheet, m_KeyName;
+            private object m_KeyValue;
+
             /// <summary>
             /// 
             /// </summary>
@@ -109,6 +121,10 @@ namespace XlsxToConfig
             private string m_BoolTRUE = "true";
             private string m_BoolFALSE = "false";
             private string m_NullValue = "nil";
+            private string m_LocFileName = "localization.xlsx";
+            private string m_LocKeyFmt = "{0}.{1}#{2}";
+
+            public string locFileName { get => m_LocFileName; }
 
             public string readPath { get { return m_ReadPath; } }
             public string savePath { get { return m_SavePath; } }
@@ -134,7 +150,7 @@ namespace XlsxToConfig
             }
 
             private static Scope ReadIniScope(string section, string key, StringBuilder temp, string iniPath)
-            {                
+            {
                 var tableValue = ReadIniString(section, key, temp, iniPath);
                 if (!string.IsNullOrEmpty(tableValue)) {
                     return new Scope(tableValue);
@@ -161,13 +177,18 @@ namespace XlsxToConfig
                 m_BoolTRUE = ReadIniString(section, "BoolTRUE", temp, iniPath);
                 m_BoolFALSE = ReadIniString(section, "BoolFALSE", temp, iniPath);
                 m_NullValue = ReadIniString(section, "NullValue", temp, iniPath);
+
+                m_LocFileName = ReadIniString(section, "Localization", temp, iniPath);
+                m_LocKeyFmt = ReadIniString(section, "LocKeyFmt", temp, iniPath);
             }
-            
+
             private void BuildCell(StringBuilder strbld, bool firstCell, string key, ICell cell, string cellType)
             {
                 if (cell == null) return;
-                
+
                 if (!firstCell) strbld.Append(m_Cell.Separator);
+
+                var isKey = key == m_KeyName;
                 var cellFmt = m_Cell.Begin;
                 switch (cellType) {
                     case "bool":
@@ -190,6 +211,7 @@ namespace XlsxToConfig
                                 break;
                             case CellType.Numeric:
                                 strbld.AppendFormat(cellFmt, key, cell);
+                                if (isKey) m_KeyValue = cell.NumericCellValue;
                                 break;
                             default:
                                 var strValue = cell.ToString();
@@ -199,16 +221,18 @@ namespace XlsxToConfig
                         }
                         break;
                     case "string":
+                        var cellValue = cell.ToString();
                         if (!string.IsNullOrEmpty(m_StrQoute)) {
-                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cell.ToString() + m_StrQoute);
+                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cellValue + m_StrQoute);
                         } else {
-                            strbld.AppendFormat(cellFmt, key, cell);
+                            strbld.AppendFormat(cellFmt, key, cellValue);
                         }
+                        if (isKey) m_KeyValue = cellValue;
                         break;
                     case "int[]": {
                             var arrbld = new StringBuilder(m_Array.Begin);
                             var array = cell.ToString().Split(s_ArrSeparator);
-                            for(var i = 0; i < array.Length; ++i) {
+                            for (var i = 0; i < array.Length; ++i) {
                                 var elm = array[i];
                                 if (i > 0) arrbld.Append(m_Array.Separator);
                                 if (int.TryParse(elm, out int value)) {
@@ -243,8 +267,11 @@ namespace XlsxToConfig
                 }
             }
 
-            public string BuildTable(ISheet sheet)
+            public string BuildTable(string sheetName, ISheet sheet)
             {
+                m_CurrentSheet = sheetName;
+                m_KeyName = null;
+
                 var strbld = new StringBuilder();
                 strbld.Append(m_Table.Begin);
                 var platforms = sheet.GetRow(m_PlatRowNum);
@@ -255,11 +282,43 @@ namespace XlsxToConfig
 
                 var firstCellNum = header.FirstCellNum;
                 var lastCellNum = header.LastCellNum;
+                var headerNames = new string[lastCellNum - firstCellNum + 1];
+                var locHeaders = new List<string>();
+
+                for (var i = firstCellNum; i < lastCellNum; ++i) {
+                    var plat = platforms.GetCell(i);
+                    if (plat == null || plat.CellType != CellType.String) continue;
+
+                    var type = types.GetCell(i);
+                    if (type == null || type.CellType != CellType.String) continue;
+
+                    var cell = header.GetCell(i);
+                    if (cell == null || cell.CellType != CellType.String) continue;
+
+                    var index = i - firstCellNum;
+                    var cellValue = cell.StringCellValue;                    
+                    var isharp = cellValue.IndexOf('#');
+                    if (isharp > 0) {
+                        headerNames[index] = cellValue.Substring(0, isharp);
+                        if (isharp == cellValue.Length - 1) {
+                            m_KeyName = headerNames[index];
+                        } else {
+                            locHeaders.Add(headerNames[index]);
+                        }
+                    } else {
+                        headerNames[index] = cellValue;
+                    }
+                }
+                if (!string.IsNullOrEmpty(m_KeyName)) {
+                    for (int i = 0; i < locHeaders.Count; i++) {
+                        m_LocalizationDefineList.Add(new LocDefine() { sheet = m_CurrentSheet, key = m_KeyName, header = locHeaders[i] });
+                    }
+                }
 
                 var last = sheet.LastRowNum;
                 for (var i = sheet.FirstRowNum + m_HeaderRowNum + 1; i <= last; ++i) {
                     var row = sheet.GetRow(i);
-                    strbld.Append(m_Line.Begin);                    
+                    strbld.Append(m_Line.Begin);
                     var first = true;
                     for (var j = firstCellNum; j < lastCellNum; ++j) {
                         var plat = platforms.GetCell(j);
@@ -271,7 +330,27 @@ namespace XlsxToConfig
                         var cell = header.GetCell(j);
                         if (cell == null) continue;
 
-                        BuildCell(strbld, first, cell.StringCellValue, row.GetCell(j), type.StringCellValue);
+                        var valueCell = row.GetCell(j);
+
+                        var headerName = headerNames[j - firstCellNum];
+                        var isLocHeader = locHeaders.Contains(headerName);
+                        if (isLocHeader) {
+                            if (m_KeyName != null) {
+                                if (m_KeyValue == null) {
+
+                                } else {
+                                    var locKey = string.Format(m_LocKeyFmt, m_CurrentSheet, headerName, m_KeyValue);
+                                    if (m_LocalizationTextMap.ContainsKey(locKey)) {
+                                        Console.WriteLine("存在重复的本地化键值：{0}！", locKey);
+                                    } else {
+                                        if (valueCell != null)
+                                            m_LocalizationTextMap.Add(locKey, valueCell.ToString());
+                                    }
+                                }
+                            }
+                        } else {
+                            BuildCell(strbld, first, headerName, valueCell, type.StringCellValue);
+                        }
                         first = false;
                     }
                     strbld.Append(m_Line.End);
@@ -280,6 +359,84 @@ namespace XlsxToConfig
                 strbld.Append(m_Table.End);
                 return strbld.ToString();
             }
+
+            private void BuildRow(ISheet sheet, int rowNum, int firstCol, params object[] values)
+            {
+                var row = sheet.CreateRow(rowNum);
+                for (int i = firstCol; i < firstCol + values.Length; i++) {
+                    var value = values[i];
+                    if (value is int) {
+                        row.CreateCell(i).SetCellValue((int)value);
+                    } else if (value is string) {
+                        row.CreateCell(i).SetCellValue((string)value);
+                    }
+                }
+            }
+
+            public IWorkbook BuildLocTable()
+            {
+                var locPath = Path.Combine(m_ReadPath, m_LocFileName);
+
+                var fileExt = Path.GetExtension(locPath).ToLower();
+                FileStream fs = null;
+                IWorkbook workbook = null;
+                switch (fileExt) {
+                    case ".xlsx":
+                        fs = new FileStream(locPath, FileMode.Create, FileAccess.Write);
+                        workbook = new XSSFWorkbook();
+                        break;
+                    case ".xls":
+                        fs = new FileStream(locPath, FileMode.Create, FileAccess.Write);
+                        workbook = new HSSFWorkbook();
+                        break;
+                }
+
+                var nextNum = Math.Max(m_HeaderRowNum, Math.Max(m_PlatRowNum, m_TypeRowNum)) + 1;
+
+                var sheet = workbook.CreateSheet("@define");
+                BuildRow(sheet, m_PlatRowNum, 0, "lua", "lua", "lua");
+                BuildRow(sheet, m_TypeRowNum, 0, "string", "string", "string");
+                BuildRow(sheet, m_HeaderRowNum, 0, "sheetName", "headerName", "keyName");
+
+                var i = nextNum;
+                foreach (var def in m_LocalizationDefineList) {
+                    BuildRow(sheet, i++, 0, def.sheet, def.header, def.key);
+                }
+
+                sheet = workbook.CreateSheet("@base");
+
+                BuildRow(sheet, m_PlatRowNum, 0, "lua", "lua");
+                BuildRow(sheet, m_TypeRowNum, 0, "string", "string");
+                BuildRow(sheet, m_HeaderRowNum, 0, "key", "text");
+
+                i = nextNum;
+                foreach (var kv in m_LocalizationTextMap) {
+                    BuildRow(sheet, i++, 0, kv.Key, kv.Value);
+                }
+
+                workbook.Write(fs);
+                fs.Close();
+                return workbook;
+            }
+        }
+
+        private static void ConvertBook(XlsxConvertor convertor, IWorkbook workbook, string fileName, string savePath)
+        {
+            for (var i = 0; i < workbook.NumberOfSheets; ++i) {
+                var sheetName = workbook.GetSheetName(i);
+                if (sheetName != null && sheetName.StartsWith("@")) {
+                    sheetName = fileName + "_" + sheetName.Substring(1).ToLower();
+                    var saveName = sheetName + "." + convertor.fileExt;
+                    var saveFilePath = Path.Combine(savePath, saveName);
+                    var saveFileDir = Path.GetDirectoryName(saveFilePath);
+                    if (!Directory.Exists(saveFileDir)) Directory.CreateDirectory(saveFileDir);
+
+                    using (var f = File.CreateText(Path.Combine(savePath, saveName))) {
+                        f.Write(convertor.BuildTable(sheetName, workbook.GetSheetAt(i)));
+                    }
+                }
+            }
+            workbook.Close();
         }
 
         private static void ConvertXlsx(XlsxConvertor convertor, string filePath, string readPath, string savePath)
@@ -303,20 +460,11 @@ namespace XlsxToConfig
 
             var fileName = filePath.Substring(readPath.Length + 1).ToLower();
             fileName = fileName.Substring(0, fileName.LastIndexOf('.'));
-            for (var i = 0; i < workbook.NumberOfSheets; ++i) {
-                var sheetName = workbook.GetSheetName(i);
-                if (sheetName != null && sheetName.StartsWith("@")) {
-                    sheetName = sheetName.Substring(1).ToLower();
-                    var saveName = fileName + "_" + sheetName + "." + convertor.fileExt;
-                    var saveFilePath = Path.Combine(savePath, saveName);
-                    var saveFileDir = Path.GetDirectoryName(saveFilePath);
-                    if (!Directory.Exists(saveFileDir)) Directory.CreateDirectory(saveFileDir);
+            ConvertBook(convertor, workbook, fileName, savePath);
 
-                    using (var f = File.CreateText(Path.Combine(savePath, saveName))) {
-                        f.Write(convertor.BuildTable(workbook.GetSheetAt(i)));
-                    }
-                }
-            }
+            workbook = convertor.BuildLocTable();
+            fileName = convertor.locFileName.Substring(0, convertor.locFileName.LastIndexOf('.'));
+            ConvertBook(convertor, workbook, fileName, savePath);
         }
     }
 }
