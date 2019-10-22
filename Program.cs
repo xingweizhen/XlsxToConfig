@@ -111,6 +111,7 @@ namespace XlsxToConfig
             private int m_PlatRowNum = 0;
             private int m_TypeRowNum = 1;
             private int m_HeaderRowNum = 2;
+            private int m_DataRowNum = 3;
 
             private Scope m_Table = new Scope("{\n", "\n}", null);
             private Scope m_Line = new Scope("{", "}", ",");
@@ -167,6 +168,7 @@ namespace XlsxToConfig
                 m_PlatRowNum = ReadIniInteger(section, "PlatRow", -1, temp, iniPath);
                 m_TypeRowNum = ReadIniInteger(section, "TypeRow", -1, temp, iniPath);
                 m_HeaderRowNum = ReadIniInteger(section, "HeaderRow", -1, temp, iniPath);
+                m_DataRowNum = ReadIniInteger(section, "DataRow", -1, temp, iniPath);
 
                 m_Table = ReadIniScope(section, "Table", temp, iniPath) ?? m_Table;
                 m_Line = ReadIniScope(section, "Line", temp, iniPath) ?? m_Line;
@@ -316,7 +318,7 @@ namespace XlsxToConfig
                 }
 
                 var last = sheet.LastRowNum;
-                for (var i = sheet.FirstRowNum + m_HeaderRowNum + 1; i <= last; ++i) {
+                for (var i = m_DataRowNum; i <= last; ++i) {
                     var row = sheet.GetRow(i);
                     strbld.Append(m_Line.Begin);
                     var first = true;
