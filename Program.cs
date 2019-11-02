@@ -325,6 +325,7 @@ namespace XlsxToConfig
 
                     var linebld = new StringBuilder();
                     var first = true;
+                    m_KeyValue = null;
                     for (var j = firstCellNum; j < lastCellNum; ++j) {
                         var plat = platforms.GetCell(j);
                         if (plat == null || string.IsNullOrEmpty(plat.StringCellValue)) continue;
