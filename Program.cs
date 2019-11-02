@@ -318,9 +318,12 @@ namespace XlsxToConfig
                 }
 
                 var last = sheet.LastRowNum;
+                var lineIdx = 0;
                 for (var i = m_DataRowNum; i <= last; ++i) {
                     var row = sheet.GetRow(i);
-                    strbld.Append(m_Line.Begin);
+                    if (row == null) break;
+
+                    var linebld = new StringBuilder();
                     var first = true;
                     for (var j = firstCellNum; j < lastCellNum; ++j) {
                         var plat = platforms.GetCell(j);
@@ -351,12 +354,17 @@ namespace XlsxToConfig
                                 }
                             }
                         } else {
-                            BuildCell(strbld, first, headerName, valueCell, type.StringCellValue);
+                            BuildCell(linebld, first, headerName, valueCell, type.StringCellValue);
                         }
                         first = false;
                     }
-                    strbld.Append(m_Line.End);
-                    if (i < last) strbld.AppendLine(m_Line.Separator);
+                    if (linebld.Length > 0) {
+                        if (lineIdx > 0) strbld.AppendLine(m_Line.Separator);
+                        strbld.Append(m_Line.Begin);
+                        strbld.Append(linebld.ToString());
+                        strbld.Append(m_Line.End);
+                        lineIdx++;
+                    } else break;
                 }
                 strbld.Append(m_Table.End);
                 return strbld.ToString();
