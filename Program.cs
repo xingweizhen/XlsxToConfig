@@ -187,6 +187,8 @@ namespace XlsxToConfig
             private void BuildCell(StringBuilder strbld, bool firstCell, string key, ICell cell, string cellType)
             {
                 if (cell == null) return;
+                var cellString = cell.ToString();
+                if (string.IsNullOrEmpty(cellString)) return;
 
                 if (!firstCell) strbld.Append(m_Cell.Separator);
 
@@ -202,7 +204,7 @@ namespace XlsxToConfig
                                 strbld.AppendFormat(cellFmt, key, cell.NumericCellValue != 0 ? m_BoolTRUE : m_BoolFALSE);
                                 break;
                             default:
-                                strbld.AppendFormat(cellFmt, key, !string.IsNullOrEmpty(cell.ToString()) ? m_BoolTRUE : m_BoolFALSE);
+                                strbld.AppendFormat(cellFmt, key, m_BoolTRUE);
                                 break;
                         }
                         break;
@@ -216,24 +218,22 @@ namespace XlsxToConfig
                                 if (isKey) m_KeyValue = cell.NumericCellValue;
                                 break;
                             default:
-                                var strValue = cell.ToString();
-                                int.TryParse(strValue, out int value);
+                                int.TryParse(cellString, out int value);
                                 strbld.AppendFormat(cellFmt, key, value);
                                 break;
                         }
                         break;
                     case "string":
-                        var cellValue = cell.ToString();
                         if (!string.IsNullOrEmpty(m_StrQoute)) {
-                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cellValue + m_StrQoute);
+                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cellString + m_StrQoute);
                         } else {
-                            strbld.AppendFormat(cellFmt, key, cellValue);
+                            strbld.AppendFormat(cellFmt, key, cellString);
                         }
-                        if (isKey) m_KeyValue = cellValue;
+                        if (isKey) m_KeyValue = cellString;
                         break;
                     case "int[]": {
                             var arrbld = new StringBuilder(m_Array.Begin);
-                            var array = cell.ToString().Split(s_ArrSeparator);
+                            var array = cellString.Split(s_ArrSeparator);
                             for (var i = 0; i < array.Length; ++i) {
                                 var elm = array[i];
                                 if (i > 0) arrbld.Append(m_Array.Separator);
@@ -250,7 +250,7 @@ namespace XlsxToConfig
                         break;
                     case "string[]": {
                             var arrbld = new StringBuilder(m_Array.Begin);
-                            var array = cell.ToString().Split(s_ArrSeparator);
+                            var array = cellString.Split(s_ArrSeparator);
                             for (var i = 0; i < array.Length; ++i) {
                                 var elm = array[i];
                                 if (i > 0) arrbld.Append(m_Array.Separator);
