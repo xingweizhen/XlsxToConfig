@@ -131,6 +131,8 @@ namespace XlsxToConfig
             public string savePath { get { return m_SavePath; } }
             public string fileExt { get { return m_FileExt; } }
 
+            public IFormulaEvaluator evaluator;
+
             private static string ReadIniString(string section, string key, StringBuilder temp, string iniPath)
             {
                 temp.Clear();
@@ -187,6 +189,7 @@ namespace XlsxToConfig
             private void BuildCell(StringBuilder strbld, bool firstCell, string key, ICell cell, string cellType)
             {
                 if (cell == null) return;
+                if (cell.CellType == CellType.Formula && evaluator != null) cell = evaluator.EvaluateInCell(cell);
                 var cellString = cell.ToString();
                 if (string.IsNullOrEmpty(cellString)) return;
 
@@ -455,14 +458,17 @@ namespace XlsxToConfig
             var fileExt = Path.GetExtension(filePath).ToLower();
             FileStream fs = null;
             IWorkbook workbook = null;
+            IFormulaEvaluator evaluator = null;
             switch (fileExt) {
                 case ".xlsx":
                     fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
                     workbook = new XSSFWorkbook(fs);
+                    evaluator = new XSSFFormulaEvaluator(workbook);
                     break;
                 case ".xls":
                     fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
                     workbook = new HSSFWorkbook(fs);
+                    evaluator = new HSSFFormulaEvaluator(workbook);
                     break;
             }
             if (workbook == null) return;
@@ -471,10 +477,12 @@ namespace XlsxToConfig
 
             var fileName = filePath.Substring(readPath.Length + 1).ToLower();
             fileName = fileName.Substring(0, fileName.LastIndexOf('.'));
+            convertor.evaluator = evaluator;
             ConvertBook(convertor, workbook, fileName, savePath);
 
             workbook = convertor.BuildLocTable();
             fileName = convertor.locFileName.Substring(0, convertor.locFileName.LastIndexOf('.'));
+            convertor.evaluator = null;
             ConvertBook(convertor, workbook, fileName, savePath);
         }
     }
