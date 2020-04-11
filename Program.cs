@@ -13,21 +13,27 @@ namespace XlsxToConfig
 {
     class Program
     {
+        private static readonly List<string> SupportHeaders = new List<string>() {
+            "int", "int[]", "bool", "string", "string[]",
+        };
+
         static void Main(string[] args)
         {
             Console.WriteLine(Environment.CurrentDirectory);
             var xlsxPath = string.Empty;
             var savePath = string.Empty;
             var section = string.Empty;
+            var inifile = "config.ini";
             if (args.Length < 1) {
                 Console.Write("输入保存格式(lua, xml, json, ...)：");
                 section = Console.ReadLine();
             } else {
                 section = args[0];
+                if (args.Length > 1) inifile = args[1];
             }
 
             // 读取配置文件
-            var iniPath = Path.Combine(Environment.CurrentDirectory, "config.ini");
+            var iniPath = Path.Combine(Environment.CurrentDirectory, inifile);
             if (File.Exists(iniPath)) {
                 var convertor = new XlsxConvertor(iniPath, section);
                 xlsxPath = convertor.readPath;
@@ -192,6 +198,7 @@ namespace XlsxToConfig
                 if (cell.CellType == CellType.Formula && evaluator != null) cell = evaluator.EvaluateInCell(cell);
                 var cellString = cell.ToString();
                 if (string.IsNullOrEmpty(cellString)) return;
+                if (!SupportHeaders.Contains(cellType)) return;
 
                 if (!firstCell) strbld.Append(m_Cell.Separator);
 
@@ -389,6 +396,8 @@ namespace XlsxToConfig
 
             public IWorkbook BuildLocTable()
             {
+                if (m_LocalizationDefineList.Count == 0) return null;
+
                 var locPath = Path.Combine(m_ReadPath, m_LocFileName);
 
                 var fileExt = Path.GetExtension(locPath).ToLower();
@@ -481,9 +490,11 @@ namespace XlsxToConfig
             ConvertBook(convertor, workbook, fileName, savePath);
 
             workbook = convertor.BuildLocTable();
-            fileName = convertor.locFileName.Substring(0, convertor.locFileName.LastIndexOf('.'));
-            convertor.evaluator = null;
-            ConvertBook(convertor, workbook, fileName, savePath);
+            if (workbook != null) {
+                fileName = convertor.locFileName.Substring(0, convertor.locFileName.LastIndexOf('.'));
+                convertor.evaluator = null;
+                ConvertBook(convertor, workbook, fileName, savePath);
+            }
         }
     }
 }
