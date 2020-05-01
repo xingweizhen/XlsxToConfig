@@ -124,7 +124,7 @@ namespace XlsxToConfig
             private Scope m_Array = new Scope("{", "}", ",");
             private Scope m_Cell = new Scope("{0}={1}", null, ",");
 
-            private string m_StrQoute = "\"";
+            private Scope m_StrQoute;// = new Scope("\"", "\"", null);
             private string m_BoolTRUE = "true";
             private string m_BoolFALSE = "false";
             private string m_NullValue = "nil";
@@ -182,8 +182,8 @@ namespace XlsxToConfig
                 m_Line = ReadIniScope(section, "Line", temp, iniPath) ?? m_Line;
                 m_Array = ReadIniScope(section, "Array", temp, iniPath) ?? m_Array;
                 m_Cell = ReadIniScope(section, "Cell", temp, iniPath) ?? m_Cell;
+                m_StrQoute = ReadIniScope(section, "StrQoute", temp, iniPath);
 
-                m_StrQoute = ReadIniString(section, "StrQoute", temp, iniPath);
                 m_BoolTRUE = ReadIniString(section, "BoolTRUE", temp, iniPath);
                 m_BoolFALSE = ReadIniString(section, "BoolFALSE", temp, iniPath);
                 m_NullValue = ReadIniString(section, "NullValue", temp, iniPath);
@@ -234,8 +234,8 @@ namespace XlsxToConfig
                         }
                         break;
                     case "string":
-                        if (!string.IsNullOrEmpty(m_StrQoute)) {
-                            strbld.AppendFormat(cellFmt, key, m_StrQoute + cellString + m_StrQoute);
+                        if (m_StrQoute != null) {
+                            strbld.AppendFormat(cellFmt, key, m_StrQoute.Begin + cellString + m_StrQoute.End);
                         } else {
                             strbld.AppendFormat(cellFmt, key, cellString);
                         }
@@ -268,7 +268,7 @@ namespace XlsxToConfig
                                     if (array.Length == 1) break;
                                     arrbld.Append(m_NullValue);
                                 } else {
-                                    arrbld.Append(m_StrQoute + elm + m_StrQoute);
+                                    arrbld.Append(m_StrQoute.Begin + elm + m_StrQoute.End);
                                 }
                             }
                             arrbld.Append(m_Array.End);
